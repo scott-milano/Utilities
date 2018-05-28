@@ -1,0 +1,30 @@
+#!/usr/bin/python
+
+import sys, string
+from socket import *
+
+parms=sys.argv[1:]
+priFlag=0
+
+try:
+   if sys.argv[1]=='-p':
+      print 'Priority Flag Set'
+      parms=parms[1:]
+      priFlag=1
+
+except 'HAT':
+   pass
+   print 'Except'
+
+if len(parms)<3:
+   print 'ERROR: Format %s host port string to send'%sys.argv[0]
+else:
+   host=parms[0]
+   port=int(parms[1])
+   message=string.join(parms[2:],' ')
+   sock=socket(AF_INET,SOCK_DGRAM)
+   sock.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, 16)
+   if priFlag:
+      sock.setsockopt(IPPROTO_IP, IP_TOS,0xB0)
+   sock.sendto(message,(host,port))
+

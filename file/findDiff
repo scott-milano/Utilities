@@ -1,0 +1,45 @@
+#!/bin/bash
+
+if [ $# -ne 2 ]
+then
+   echo ERROR: parameter error
+   echo "\t$0 dir1 dir2"
+   echo This script creates a list of files in \'dir1\' and then diffs these
+   echo files one at a time with the files with the same name and path in
+   echo \'dir2\'.  If there are differences, It outputs the filename.
+   exit 2
+fi
+
+# Save the current dir so that you can return
+ODIR=`pwd`
+cd $2
+CWD=`pwd`
+cd $ODIR
+cd $1
+DWD=`pwd`
+
+GOOD=true
+RET=0
+
+(cd $DWD; find * -type f;cd $CWD; find * -type f) | sort |uniq |while read J
+do
+   if [ ! -f "$DWD/$J" ]
+   then
+      echo Missing file: $DWD/$J
+   elif [ ! -f "$CWD/$J" ]
+   then
+      echo Missing file: $CWD/$J
+   else
+      diff "$DWD/$J" "$CWD/$J" 2>/dev/null > /dev/null
+      OUT=$?
+      if [ $OUT -ne 0 ]
+      then
+         echo Diff found: $J
+         GOOD=false
+         RET=1
+      fi
+   fi
+done
+
+echo $GOOD
+exit $RET

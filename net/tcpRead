@@ -1,0 +1,21 @@
+#!/usr/bin/python
+
+import sys, string
+from socket import *
+
+if len(sys.argv)<2:
+   print 'ERROR: Format %s port'%sys.argv[0]
+else:
+   port=int(sys.argv[1])
+   message=string.join(sys.argv[3:],' ')
+   sock=socket(AF_INET,SOCK_STREAM)
+   sock.bind(('',int(port)))
+   data='None'
+   while data!='close':
+      sock.listen(1)
+      conn, addr=sock.accept()
+      data=conn.recv(1024)
+      conn.send(data)
+      conn.close()
+      print 'Source:',addr,' Data:',data
+

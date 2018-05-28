@@ -1,0 +1,20 @@
+#!/bin/bash
+
+
+SRC=$1
+shift
+DST=$1
+shift
+
+if [ "$SRC" = "" -o "$DST" = "" ]
+then
+   echo PARAMTER ERROR
+   echo $0 src_dir dest_dir file_list
+   exit 1
+fi
+
+echo SRC: $SRC
+echo DST: $DST
+echo FILES: $*
+
+(cd $SRC ; tar -cf - $*) | (cd $DST ; tar -xvf - )

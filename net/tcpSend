@@ -1,0 +1,17 @@
+#!/usr/bin/python
+
+import sys, string
+from socket import *
+
+if len(sys.argv)<4:
+   print 'ERROR: Format %s host port string to send'%sys.argv[0]
+else:
+   host=sys.argv[1]
+   port=int(sys.argv[2])
+   message=string.join(sys.argv[3:],' ')
+   sock=socket(AF_INET,SOCK_STREAM)
+   sock.connect((host,port))
+   sock.send(message)
+   data=sock.recv(1024)
+   print "Returned:",data
+

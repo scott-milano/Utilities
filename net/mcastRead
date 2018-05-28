@@ -1,0 +1,31 @@
+#!/usr/bin/python
+#
+
+import sys, string, struct
+from socket import *
+
+if len(sys.argv)!=3:
+   print 'ERROR: Format %s group port'%sys.argv[0]
+else:
+   group=sys.argv[1]
+   port=int(sys.argv[2])
+   sock=socket(AF_INET,SOCK_DGRAM)
+   sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+   sock.bind(('',port))
+   group = gethostbyname(group)
+
+   # Create mreq struct
+   bytes = map(int, string.split(group, "."))
+   grpaddr = 0
+   for byte in bytes: grpaddr = (grpaddr << 8) | byte
+   ifaddr = INADDR_ANY
+   mreq = struct.pack('ll', htonl(grpaddr), htonl(ifaddr))
+
+   # Join group
+   sock.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, mreq)
+   data='None'
+   while data!='close':
+      packet=sock.recvfrom(1024)
+      data=packet[0]
+      print 'Source:',packet[1],' Data:',data
+
