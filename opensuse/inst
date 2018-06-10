@@ -1,0 +1,32 @@
+#!/bin/bash
+# Simple utility to install and log packages based on command or package name
+# example: inst gvim
+
+PKGLIST=""
+
+for I in $*
+do
+    echo -n Checking $I 
+    LINE=`cnf $I 2>&1 | grep sudo `
+    if [ `echo $LINE| grep sudo | grep -v selected_package | wc -l` -gt 0 ]
+    then
+        echo Found: $I in $LINE
+        PKGLIST="$PKGLIST `echo $LINE | sed -e 's/sudo zypper install//'`"
+    else
+        echo Adding: $I in $LINE
+        PKGLIST="$PKGLIST $I"
+    fi
+done
+
+PKGLIST=`echo $PKGLIST`
+
+if [ "$PKGLIST" != "" ]
+then
+    mkdir -p ~/Packages
+    echo "    sudo zypper install -y $PKGLIST"
+    sudo zypper install -y $PKGLIST && echo "    sudo zypper install $PKGLIST" >> ~/Packages/packages.txt
+else
+    echo "No package found, run as: "
+    echo `basename $0` command
+fi
+
