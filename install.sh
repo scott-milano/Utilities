@@ -9,6 +9,6 @@ cd ~/bin
 for I in `find $CWD/*/ -type f`
 do
     echo Installing $I
-    ln -sf %I
+    ln -sf $I
 done
 
