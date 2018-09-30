@@ -1,0 +1,349 @@
+#!/usr/bin/python
+# This is a simple python script that implements a rsync style copy
+# This file is free of copywrite, use at your own risk
+
+# System utilities
+import sys,os,shutil
+import time
+import getopt
+import hashlib
+
+
+# Global Flags and counts
+gDebug=False    # Verbose prints
+gDcount=0       # Number of folders copied
+gDtotal=0       # Total number of folders
+gFcount=0       # Number of files copied
+gFtotal=0       # Total number of files
+gForce=False    # Force a copy
+gSums=False     # Use md5sums instead of file time
+
+# Logging Functions
+def LOG(s):
+    funct=sys._getframe(1).f_code.co_name
+    if `funct`=="'<module>'":
+        funct="main"
+    print "Info %s %s:%d %s"%(
+            os.path.basename(sys._getframe(1).f_code.co_filename), 
+            funct, sys._getframe(1).f_lineno, s)
+
+def WARN(s):
+    funct=sys._getframe(1).f_code.co_name
+    if `funct`=="'<module>'":
+        funct="main"
+    print "WARNING %s %s:%d %s"%(
+            os.path.basename(sys._getframe(1).f_code.co_filename), 
+            funct, sys._getframe(1).f_lineno, s)
+
+def VERBOSE(s):
+    if not gDebug: return
+    funct=sys._getframe(1).f_code.co_name
+    if `funct`=="'<module>'":
+        funct="main"
+    print "Verbose %s %s:%d %s"%(
+            os.path.basename(sys._getframe(1).f_code.co_filename), 
+            funct, sys._getframe(1).f_lineno, s)
+
+# Calculate md5 sum block by block
+def md5sum(fname):
+    hash_md5 = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+# Single Directory item
+class dirItem:
+    def __init__(self,root,base=None):
+    # root: Top level folder
+    # base: Portion of folder name shared between src and dst
+        if base:
+            item=os.path.join(root,base)
+        else:
+            item=root
+        self.name=os.path.abspath(item)
+        if not os.path.isfile(self.name):
+            self.time=0
+            self.mode=0755
+        else:
+            self.time=int(os.path.getmtime(self.name))
+            self.mode=os.stat(source).st_mode
+
+        if base:
+            self.root=os.path.abspath(root)+os.path.sep
+            destination=os.path.join(self.root,base)
+            self.base=destination[len(self.root):]
+            self.dir=os.path.dirname(self.name)
+        else:
+            self.base=os.path.basename(self.name)
+            self.root=os.path.dirname(self.name)+os.path.sep
+            self.dir=self.root
+        VERBOSE("Created: %s, %s + %s"%(self.__class__.__name__,
+                self.root,self.base))
+    def exists(self):
+        return os.path.isdir(self.name)
+    def __call__(self,root=None):
+        if root:
+            return os.path.join(root,self.base)
+        else:
+            return self.name
+    def __repr__(self):
+        return self.name
+
+class fileItem(dirItem):
+    # root: Top level folder
+    # base: Portion of file name shared between src and dst
+    def __init__(self,root,base=None):
+        # If root was provided, keep it
+        if base:
+            item=os.path.join(root,base)
+        else:
+            item=root
+        self.name=os.path.abspath(item)
+        if not os.path.isfile(self.name):
+            self.size=0
+            self.sum=None
+            self.time=0
+        else:
+            self.size=os.path.getsize(self.name)
+            self.time=int(os.path.getmtime(self.name))
+            self.sum=None
+        if base:
+            self.root=os.path.abspath(root)+os.path.sep
+            destination=os.path.join(self.root,base)
+            self.base=destination[len(self.root):]
+            self.dir=os.path.dirname(self.name)
+        else:
+            self.base=os.path.basename(self.name)
+            self.root=os.path.dirname(self.name)+os.path.sep
+            self.dir=self.root
+        VERBOSE("Created: %s, %s + %s"%(self.__class__.__name__,
+                self.root,self.base))
+    def getSum(self):
+        # Calculate sum the first time it is needed
+        if not self.sum:
+            self.sum=md5sum(self.name)
+        return self.sum
+    def setBase(self,base):
+        self.base=base
+    def setDir(self,dirname):
+        self.dir=dirname
+    def exists(self):
+        return os.path.isfile(self.name)
+    def __eq__(self,other):
+        if self.size!=other.size:
+            return False
+        # Diff on sums or time
+        if gSums:
+            # Use sums if you cant trust time for some reason
+            if self.getSum()!=other.getSum():
+                return False
+        else: # Diff on time if not using sums
+            if self.time!=other.time:
+                return False
+        return True
+    def __ne__(self,other):
+        return not self==other
+    def __lt__(self,other):
+        if self==other:
+            return False
+        return self.time<other.time
+    def __le__(self,other):
+        if self==other:
+            return True
+        return self<other
+    def __gt__(self,other):
+        if self==other:
+            return False
+        return self.time>other.time
+    def __ge__(self,other):
+        if self==other:
+            return True
+        return self>other
+
+
+# A set of files/folders.  The class recursively generates the full
+# set from top level folder
+class fset:
+    def __init__(self,item=None):
+        #item: Top level or first entry
+        self.folderList=[]
+        self.fileList=[]
+        if item:
+            self.add(item)
+    def add(self,newEntry):
+        #newEntry: Top level file or folder 
+        newEntry=os.path.abspath(newEntry)
+        root=os.path.abspath(os.path.dirname(newEntry))+os.path.sep
+        if os.path.isfile(newEntry):
+            self.fileList.append(fileItem(newEntry))
+        elif os.path.isdir(newEntry):     # Copy directory and recurse
+            self.folderList.append(dirItem(newEntry))
+            for folder,subfolders,files in os.walk(newEntry):
+                folder=os.path.abspath(folder)
+                if folder.index(root)!=0:
+                    print "Index Error"
+                base=folder[len(root):]
+                for sub in subfolders:
+                    self.folderList.append(dirItem(root,os.path.join(base,sub)))
+                for f in files:
+                    self.fileList.append(fileItem(root,os.path.join(base,f)))
+        elif os.path.islink(source):    # To do, handle symlinks and hardlinks?
+            print "%s: skipping, link unsupported: %s"%(os.path.basename(sys.argv[0]),source)
+        else:
+            print "%s: skipping, could not determin type of: %s"%(os.path.basename(sys.argv[0]),source)
+            raise "HEll"
+    # Find first file or folder that shares the same base path
+    def getFromBase(self,name):
+        for item in self.fileList + self.folderList:
+            if item.base==name:
+                return item
+        return None
+    # Duplicate all folders in the destination
+    def makeFolders(self,dest):
+        global gDtotal,gDcount
+        for item in self.folderList:
+            newFolder=os.path.abspath(item(dest))
+            gDtotal+=1
+            if not os.path.isdir(newFolder):
+                VERBOSE("Creating %s"%newFolder)
+                os.mkdir(newFolder,item.mode)
+                gDcount+=1
+
+    # Duplicate all files in the destination
+    def copyFiles(self,destinationFolder):
+        global gFtotal,gFcount
+        for src in self.fileList:
+            dst=fileItem(destinationFolder,src.base)
+            gFtotal+=1
+            if dst.exists():
+                if gSums:   # Use md5 sums if we can't trust file date"
+                    if src==dst:
+                        continue
+                elif src<=dst:
+                    continue
+
+            LOG("Copy: %s %s"%(src,dst))
+            shutil.copy2(src.name,dst.name)
+            gFcount+=1
+    
+# help message
+def usage():
+    print "Usage:"
+    print "\t%s -options src1 [src2...] destination"%os.path.basename(
+            sys.argv[0])
+    print "\t-f|--force: Copy every file even if identical."
+    print "\t-d|--delete Delete destination files not in source."
+    print "\t-m|--sum: Use md5sum to determin if files are equal."
+    print "\t   Only use If file time is not trusted as this takes"
+    print "\t   more time for larger files"
+    print "\t-s|--sync Bydirectional copy keeping newest versions."
+
+def getargs():
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "hvfdms", 
+                ["help", "verbose","force","delete","sum","sync"])
+    except getopt.GetoptError as err:
+        # print help information and exit:
+        print "Paremeter Error:",str(err)
+        usage()
+        sys.exit(2)
+    verbose = False
+    force = False
+    delete = False
+    sums = False
+    sync = False
+    for o, a in opts:
+        if o in ("-h", "--help"):
+            usage()
+            sys.exit()
+        elif o in ("-v", "--verbose"):
+            verbose = True
+        elif o in ("-f", "--force"):
+            force = True
+        elif o in ("-d", "--delete"):
+            delete = True
+        elif o in ("-m", "--sum"):
+            sums = True
+        elif o in ("-s", "--sync"):
+            sync = True
+        else:
+            usage()
+            print "\nParameter Error:\nOption?",o,a
+            sys.exit()
+
+    # Check non-option arguments
+    if len(args)<2:
+        print "%s: 1:Argument Error"%os.path.basename(sys.argv[0])
+        usage()
+        sys.exit(1)
+
+    destination=args[-1]
+    sources=args[0:-1]
+
+    if not os.path.exists(destination):
+        print "%s: Argument Error, %s does not exist"%(os.path.basename(sys.argv[0]),destination)
+        usage()
+        sys.exit(1)
+
+    if verbose:
+        LOG("Verb: %s, Frc %s, Del: %s, Sum: %s, Sync: %s"%
+            (verbose,force,delete,sums,sync))
+        LOG("Src: %s, Dest: %s"%(sources,destination))
+
+    return verbose,force,delete,sums,sync,sources,destination
+
+
+# Run Trading Algorythm
+if __name__ == "__main__":
+    # Get Arguments
+    gDebug,gForce,delete,gSums,sync,srclist,destination=getargs()
+
+    # Count of removed files for -d
+    orphans=0
+
+    # Create a class based on args
+    start=time.time()
+
+
+    for source in srclist:
+        sources=fset()
+        destinations=fset()
+        sources.add(source)
+
+        sources.makeFolders(destination)
+        sources.copyFiles(destination)
+
+        if sync or delete:
+            destinations.add(destination+os.path.sep+
+                    os.path.basename(os.path.abspath(source)))
+
+        if sync:
+            syncsrc=os.path.abspath(source + os.path.sep + "..")
+            destinations.makeFolders(syncsrc)
+            destinations.copyFiles(syncsrc)
+
+        # Delete orphaned files, that is files in the destination that
+        # are not in the source
+        if delete:
+            for item in destinations.fileList + destinations.folderList:
+                if sources.getFromBase(item.base):
+                    continue
+                LOG("Found Orphan: %s"%item);
+                if os.path.isfile(item.name):
+                    os.remove(item.name)
+                    orphans+=1
+                elif os.path.isdir(item.name):
+                    os.rmdir(item.name)
+                    orphans+=1
+                else:
+                    WARN("Could not remove orphan: %s",item.name)
+
+    # print statistics
+    if gFtotal or gDtotal:
+        print "%d of %d Files copied"%(gFcount,gFtotal)
+        print "%d of %d Folders created"%(gDcount,gDtotal)
+        if orphans:
+            print "%d orphaned files/folders removed"%orphans
+        print "Time: %0.3f"%(time.time()-start)
+
