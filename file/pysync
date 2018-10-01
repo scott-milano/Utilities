@@ -70,13 +70,15 @@ class dirItem:
             self.mode=os.stat(source).st_mode
 
         if base:
-            self.root=os.path.abspath(root)+os.path.sep
+            self.root=os.path.abspath(root)
+            if self.root[-1]!=os.path.sep: self.root+=os.path.sep
             destination=os.path.join(self.root,base)
             self.base=destination[len(self.root):]
             self.dir=os.path.dirname(self.name)
         else:
             self.base=os.path.basename(self.name)
-            self.root=os.path.dirname(self.name)+os.path.sep
+            self.root=os.path.dirname(self.name)
+            if self.root[-1]!=os.path.sep: self.root+=os.path.sep
             self.dir=self.root
         VERBOSE("Created: %s, %s + %s"%(self.__class__.__name__,
                 self.root,self.base))
@@ -109,13 +111,15 @@ class fileItem(dirItem):
             self.time=int(os.path.getmtime(self.name))
             self.sum=None
         if base:
-            self.root=os.path.abspath(root)+os.path.sep
+            self.root=os.path.abspath(root)
+            if self.root[-1]!=os.path.sep: self.root+=os.path.sep
             destination=os.path.join(self.root,base)
             self.base=destination[len(self.root):]
             self.dir=os.path.dirname(self.name)
         else:
             self.base=os.path.basename(self.name)
-            self.root=os.path.dirname(self.name)+os.path.sep
+            self.root=os.path.dirname(self.name)
+            if self.root[-1]!=os.path.sep: self.root+=os.path.sep
             self.dir=self.root
         VERBOSE("Created: %s, %s + %s"%(self.__class__.__name__,
                 self.root,self.base))
@@ -174,7 +178,8 @@ class fset:
     def add(self,newEntry):
         #newEntry: Top level file or folder 
         newEntry=os.path.abspath(newEntry)
-        root=os.path.abspath(os.path.dirname(newEntry))+os.path.sep
+        root=os.path.abspath(os.path.dirname(newEntry))
+        if root[-1]!=os.path.sep: root+=os.path.sep
         if os.path.isfile(newEntry):
             self.fileList.append(fileItem(newEntry))
         elif os.path.isdir(newEntry):     # Copy directory and recurse
@@ -326,6 +331,7 @@ if __name__ == "__main__":
         # Delete orphaned files, that is files in the destination that
         # are not in the source
         if delete:
+            destinations.folderList.reverse()
             for item in destinations.fileList + destinations.folderList:
                 if sources.getFromBase(item.base):
                     continue
